@@ -3,6 +3,8 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const { prefix, token } = require('./config.json');
 const ytdl = require('ytdl-core');
+const { PermissionsBitField } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
 
 // create client and login
 
@@ -12,6 +14,7 @@ const client = new Client(
             [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.MessageContent,
                 GatewayIntentBits.GuildVoiceStates
             ]
     }
@@ -21,13 +24,11 @@ const client = new Client(
 
 const queue = new Map();
 
-
-
 // listeners
 client.once('ready', () => {
     console.log('Ready!');
-});
 
+});
 client.once('reconnecting', () => {
     console.log('Reconnecting...');
 });
@@ -36,13 +37,13 @@ client.once('disconnect', () => {
     console.log('Disconnect');
 });
 
-client.on('message', async message => {
+client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (!message.content.startsWith(prefix)) return;
-
     const serverQueue = queue.get(message.guild.id);
 
     if (message.content.startsWith(`${prefix}play`)) {
+        console.log('here')
         execute(message, serverQueue);
         return;
     } else if (message.content.startsWith(`${prefix}stop`)) {
@@ -68,15 +69,26 @@ const execute = async (message, serverQueue) => {
 
     const permissions = voiceChannel.permissionsFor(message.client.user);
 
-    if (!permissions.has("CONNECT") || !permissions.has("SPEAK")) {
+    if (!permissions.has([PermissionsBitField.Flags.Connect]) || !permissions.has(PermissionsBitField.Flags.Speak)) {
         return message.channel.send("I can't join the vc because of permissions (CONNECT, SPEAK)")
     }
-
+    /**
+     * 'page',
+        'player_response',
+        'response',
+        'html5player',
+        'formats',
+        'related_videos',
+        'videoDetails',
+        'full'
+     */
     const songInfo = await ytdl.getInfo(args[1]);
     const song = {
-        title: songInfo.title,
-        url: songInfo.video_url,
+        title: songInfo.player_response.videoDetails.title,
+        url: `https://https://www.youtube.com/watch?v=${songInfo.player_response.videoDetails.videoId}`,
     };
+
+    console.log(song)
 
     if (!serverQueue) {
 
@@ -95,16 +107,20 @@ const execute = async (message, serverQueue) => {
         try {
             //joining vc and hopefully it works
 
-            const connection = await voiceChannel.join();
+            const connection = joinVoiceChannel({
+                channelId: voiceChannel.id,
+                guildId: voiceChannel.guild.id,
+                adapterCreator: voiceChannel.guild.voiceAdapterCreator
+            })
             queueConstruct.connection = connection;
 
             play(message.guild, queueConstruct.songs[0]);
 
         } catch (error) {
 
-            console.log(error);
+            // console.log(error);
             queue.delete(message.guild.id);
-            return message.channel.send(err);
+            return message.channel.send(error);
         }
 
     } else {
@@ -122,17 +138,19 @@ const play = (guild, song) => {
         return;
     }
 
-    const dispatcher = serverQueue.connection
-        .play(ytdl(song.url))
-        .on("finish", () => {
-            serverQueue.songs.shift();
-            play(guild, serverQueue.songs[0])
-        })
-        .on("error", (error) => {
-            console.log(error);
-        });
+    const stream = ytdl(song.url, {
+        filter: "audioonly"
+    });
 
-    dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
+    const player = createAudioPlayer();
+    const resource = createAudioResource(stream);
+
+    const musicPlay = async () => {
+        await player.play(resource);
+        serverQueue.connection.subscribe(player);
+    }
+
+    musicPlay();
     serverQueue.textChannel.send(`Started playing: **${song.title}**`);
 }
 
@@ -155,6 +173,5 @@ const stop = async (message, serverQueue) => {
     serverQueue.songs = [];
     serverQueue.connection.dispatcher.end();
 }
-
 
 client.login(token);
