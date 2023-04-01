@@ -5,6 +5,7 @@ const { prefix, token } = require('./config.json');
 const ytdl = require('ytdl-core');
 const { PermissionsBitField } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
+const sodium = require('libsodium-wrappers');
 
 // create client and login
 
@@ -46,11 +47,11 @@ client.on('messageCreate', async message => {
         console.log('here')
         execute(message, serverQueue);
         return;
-    } else if (message.content.startsWith(`${prefix}stop`)) {
-        stop(message, serverQueue);
-        return;
     } else if (message.content.startsWith(`${prefix}skip`)) {
         skip(message, serverQueue);
+        return;
+    } else if (message.content.startsWith(`${prefix}stop`)) {
+        stop(message, serverQueue);
         return;
     } else {
         message.channel.send("You need to enter a valid command")
@@ -72,23 +73,11 @@ const execute = async (message, serverQueue) => {
     if (!permissions.has([PermissionsBitField.Flags.Connect]) || !permissions.has(PermissionsBitField.Flags.Speak)) {
         return message.channel.send("I can't join the vc because of permissions (CONNECT, SPEAK)")
     }
-    /**
-     * 'page',
-        'player_response',
-        'response',
-        'html5player',
-        'formats',
-        'related_videos',
-        'videoDetails',
-        'full'
-     */
     const songInfo = await ytdl.getInfo(args[1]);
     const song = {
         title: songInfo.player_response.videoDetails.title,
-        url: `https://https://www.youtube.com/watch?v=${songInfo.player_response.videoDetails.videoId}`,
+        url: `https://www.youtube.com/watch?v=${songInfo.player_response.videoDetails.videoId}`,
     };
-
-    console.log(song)
 
     if (!serverQueue) {
 
@@ -107,10 +96,12 @@ const execute = async (message, serverQueue) => {
         try {
             //joining vc and hopefully it works
 
+            await sodium.ready;
             const connection = joinVoiceChannel({
                 channelId: voiceChannel.id,
                 guildId: voiceChannel.guild.id,
-                adapterCreator: voiceChannel.guild.voiceAdapterCreator
+                adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                encryptionMode: sodium
             })
             queueConstruct.connection = connection;
 
@@ -120,12 +111,12 @@ const execute = async (message, serverQueue) => {
 
             // console.log(error);
             queue.delete(message.guild.id);
-            return message.channel.send(error);
+            return message.channel.send(error); 
         }
 
     } else {
         serverQueue.songs.push(song);
-        return message.channel.send(`${song.title} has been added to the queue 😚`);
+        return message.channel.send(`**${song.title}** has been added to the queue 😚`);
     }
 }
 
@@ -146,7 +137,7 @@ const play = (guild, song) => {
     const resource = createAudioResource(stream);
 
     const musicPlay = async () => {
-        await player.play(resource);
+        player.play(resource);  
         serverQueue.connection.subscribe(player);
     }
 
