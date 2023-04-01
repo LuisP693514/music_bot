@@ -72,52 +72,61 @@ const execute = async (message, serverQueue) => {
     if (!permissions.has([PermissionsBitField.Flags.Connect]) || !permissions.has(PermissionsBitField.Flags.Speak)) {
         return message.channel.send("I can't join the vc because of permissions (CONNECT, SPEAK)")
     }
-    const songInfo = await ytdl.getInfo(args[1]);
-    const song = {
-        title: songInfo.player_response.videoDetails.title,
-        videoId: songInfo.player_response.videoDetails.videoId,
-    };
 
-    if (!serverQueue) {
-
-        const queueConstruct = {
-            textChannel: message.channel,
-            voiceChannel: voiceChannel,
-            connection: null,
-            songs: [],
-            volume: 5,
-            playing: true,
-            player: null,
+    const youtubeRegex = /^https?:\/\/(youtu\.be\/|(www\.)?youtube\.com\/(embed|v|shorts)\/|www\.youtube\.com\/watch\?v=)/;
+    
+    if (args[1].match(youtubeRegex)) {
+        const songInfo = await ytdl.getInfo(args[1]);
+        const song = {
+            title: songInfo.player_response.videoDetails.title,
+            videoId: songInfo.player_response.videoDetails.videoId,
         };
 
-        queue.set(message.guild.id, queueConstruct);
-        queueConstruct.songs.push(song);
+        if (!serverQueue) {
 
-        try {
-            //joining vc and hopefully it works
+            const queueConstruct = {
+                textChannel: message.channel,
+                voiceChannel: voiceChannel,
+                connection: null,
+                songs: [],
+                volume: 5,
+                playing: true,
+                player: null,
+            };
 
-            await sodium.ready;
-            const connection = joinVoiceChannel({
-                channelId: voiceChannel.id,
-                guildId: voiceChannel.guild.id,
-                adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-                encryptionMode: sodium
-            })
-            queueConstruct.connection = connection;
+            queue.set(message.guild.id, queueConstruct);
+            queueConstruct.songs.push(song);
 
-            play(message.guild, queueConstruct.songs[0]);
+            try {
+                //joining vc and hopefully it works
 
-        } catch (error) {
+                await sodium.ready;
+                const connection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: voiceChannel.guild.id,
+                    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                    encryptionMode: sodium
+                })
+                queueConstruct.connection = connection;
 
-            // console.log(error);
-            queue.delete(message.guild.id);
-            return message.channel.send(error);
+                play(message.guild, queueConstruct.songs[0]);
+
+            } catch (error) {
+
+                // console.log(error);
+                queue.delete(message.guild.id);
+                return message.channel.send(error);
+            }
+
+        } else {
+            serverQueue.songs.push(song);
+            return message.channel.send(`**${song.title}** has been added to the queue 😚`);
         }
-
     } else {
-        serverQueue.songs.push(song);
-        return message.channel.send(`**${song.title}** has been added to the queue 😚`);
+        return message.channel.send(`I can only read youtube links (._.\`)`);
     }
+
+    
 }
 
 const play = (guild, song) => {
@@ -137,7 +146,7 @@ const play = (guild, song) => {
         });
     } catch (error) {
         console.log(error);
-    } 
+    }
 
     const player = createAudioPlayer();
     const resource = createAudioResource(stream, { inlineVolume: true });
@@ -148,8 +157,6 @@ const play = (guild, song) => {
     const musicPlay = async () => {
         player.play(resource)
         serverQueue.connection.subscribe(player);
-
-        console.log(player)
 
         player.on(AudioPlayerStatus.Idle, () => {
             serverQueue.songs.shift();
