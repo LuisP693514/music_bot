@@ -4,7 +4,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const { prefix, token } = require('./config.json');
 const ytdl = require('ytdl-core');
 const { PermissionsBitField } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const sodium = require('libsodium-wrappers');
 
 // create client and login
@@ -43,14 +43,13 @@ client.on('messageCreate', async message => {
     if (!message.content.startsWith(prefix)) return;
     const serverQueue = queue.get(message.guild.id);
 
-    if (message.content.startsWith(`${prefix}play`)) {
-        console.log('here')
+    if (message.content.startsWith(`${prefix}play `) || message.content.startsWith(`${prefix}p `)) {
         execute(message, serverQueue);
         return;
-    } else if (message.content.startsWith(`${prefix}skip`)) {
+    } else if (message.content.startsWith(`${prefix}skip`) || message.content.startsWith(`${prefix}s`)) {
         skip(message, serverQueue);
         return;
-    } else if (message.content.startsWith(`${prefix}stop`)) {
+    } else if (message.content.startsWith(`${prefix}clear`) || message.content.startsWith(`${prefix}c`)) {
         stop(message, serverQueue);
         return;
     } else {
@@ -76,7 +75,7 @@ const execute = async (message, serverQueue) => {
     const songInfo = await ytdl.getInfo(args[1]);
     const song = {
         title: songInfo.player_response.videoDetails.title,
-        url: `https://www.youtube.com/watch?v=${songInfo.player_response.videoDetails.videoId}`,
+        videoId: songInfo.player_response.videoDetails.videoId,
     };
 
     if (!serverQueue) {
@@ -88,6 +87,7 @@ const execute = async (message, serverQueue) => {
             songs: [],
             volume: 5,
             playing: true,
+            player: null,
         };
 
         queue.set(message.guild.id, queueConstruct);
@@ -124,25 +124,42 @@ const play = (guild, song) => {
 
     const serverQueue = queue.get(guild.id);
     if (!song) {
-        serverQueue.voiceChannel.leave();
+        serverQueue.connection.destroy();
         queue.delete(guild.id);
         return;
     }
 
-    const stream = ytdl(song.url, {
-        filter: "audioonly"
-    });
+    let stream;
+
+    try {
+        stream = ytdl(`https://www.youtube.com/watch?v=${song.videoId}`, {
+            filter: "audioonly"
+        });
+    } catch (error) {
+        console.log(error);
+    } 
 
     const player = createAudioPlayer();
-    const resource = createAudioResource(stream);
+    const resource = createAudioResource(stream, { inlineVolume: true });
+    resource.volume.setVolume(serverQueue.volume / 5);
+
+    serverQueue.player = player;
 
     const musicPlay = async () => {
-        player.play(resource);
+        player.play(resource)
         serverQueue.connection.subscribe(player);
+
+        console.log(player)
+
+        player.on(AudioPlayerStatus.Idle, () => {
+            serverQueue.songs.shift();
+            play(guild, serverQueue.songs[0])
+        })
+            .on('error', error => console.log(error));
     }
 
     musicPlay();
-    serverQueue.textChannel.send(`Started playing: **${song.title}**`);
+    serverQueue.textChannel.send(`🎵 Started playing: **${song.title}** 🎵`);
 }
 
 const skip = async (message, serverQueue) => {
@@ -153,9 +170,12 @@ const skip = async (message, serverQueue) => {
     if (!serverQueue) {
         return message.channel.send("Can't skip nothing");
     }
-    serverQueue.connection.dispatcher.end();
+
+    serverQueue.songs.shift();
+    play(message.guild, serverQueue.songs[0])
 }
 
+// clear the queue
 const stop = async (message, serverQueue) => {
     if (!message.member.voice.channel) {
         return message.channel.send("You have to be in the vc to stop the music 😡")
@@ -163,7 +183,7 @@ const stop = async (message, serverQueue) => {
 
     if (serverQueue) {
         serverQueue.songs = [];
-        serverQueue.connection.dispatcher.end();
+        serverQueue.connection.destroy();
     }
 }
 
