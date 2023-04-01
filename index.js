@@ -111,7 +111,7 @@ const execute = async (message, serverQueue) => {
 
             // console.log(error);
             queue.delete(message.guild.id);
-            return message.channel.send(error); 
+            return message.channel.send(error);
         }
 
     } else {
@@ -137,7 +137,7 @@ const play = (guild, song) => {
     const resource = createAudioResource(stream);
 
     const musicPlay = async () => {
-        player.play(resource);  
+        player.play(resource);
         serverQueue.connection.subscribe(player);
     }
 
@@ -161,8 +161,10 @@ const stop = async (message, serverQueue) => {
         return message.channel.send("You have to be in the vc to stop the music 😡")
     }
 
-    serverQueue.songs = [];
-    serverQueue.connection.dispatcher.end();
+    if (serverQueue) {
+        serverQueue.songs = [];
+        serverQueue.connection.dispatcher.end();
+    }
 }
 
 client.login(token);
