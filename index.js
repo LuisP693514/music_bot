@@ -46,16 +46,24 @@ client.on('messageCreate', async message => {
     if (message.content.startsWith(`${prefix}play `) || message.content.startsWith(`${prefix}p `)) {
         execute(message, serverQueue);
         return;
-    } else if (message.content.startsWith(`${prefix}skip`) || message.content.startsWith(`${prefix}s`)) {
+    } else if (message.content === `${prefix}skip` || message.content === `${prefix}s`) {
         skip(message, serverQueue);
         return;
-    } else if (message.content.startsWith(`${prefix}clear`) || message.content.startsWith(`${prefix}c`)) {
+    } else if (message.content === `${prefix}clear` || message.content === `${prefix}c` || message.content === `${prefix}stop`) {
         stop(message, serverQueue);
         return;
+    } else if (message.content === `${prefix}queue` || message.content === `${prefix}q`) {
+        checkQueue(message, serverQueue)
+        return;
     } else {
-        message.channel.send("You need to enter a valid command")
+        message.channel.send(`You need to enter a valid command. \`${prefix}help\` for a list of commands.`)
     }
 });
+
+const checkQueue = async (message, serverQueue) => {
+    const listOfSongs = serverQueue?.songs.map(song => song.title).join("\n") || "The queue contains no songs 😢";
+    message.channel.send(`\`\`\`${listOfSongs}\`\`\``);
+}
 
 const execute = async (message, serverQueue) => {
 
@@ -74,9 +82,20 @@ const execute = async (message, serverQueue) => {
     }
 
     const youtubeRegex = /^https?:\/\/(youtu\.be\/|(www\.)?youtube\.com\/(embed|v|shorts)\/|www\.youtube\.com\/watch\?v=)/;
-    
+
     if (args[1].match(youtubeRegex)) {
-        const songInfo = await ytdl.getInfo(args[1]);
+        let songInfo = await ytdl.getInfo(args[1]);
+        let bitRate = voiceChannel.bitrate;
+        let format;
+
+        // try {
+        //     format = ytdl.chooseFormat(songInfo.formats, { quality: "lowestaudio", filter: form => form.bitrate >= bitRate });
+        // } catch (error) {
+        //     format = ytdl.chooseFormat(songInfo.formats, { quality: "highestaudio", filter: form => form.bitrate < bitRate });
+        // }
+
+        // songInfo.formats = [format];
+
         const song = {
             title: songInfo.player_response.videoDetails.title,
             videoId: songInfo.player_response.videoDetails.videoId,
@@ -126,7 +145,7 @@ const execute = async (message, serverQueue) => {
         return message.channel.send(`I can only read youtube links (._.\`)`);
     }
 
-    
+
 }
 
 const play = (guild, song) => {
@@ -134,6 +153,7 @@ const play = (guild, song) => {
     const serverQueue = queue.get(guild.id);
     if (!song) {
         serverQueue.connection.destroy();
+        serverQueue.textChannel.send(`Left the vc because there was no more music queued up`)
         queue.delete(guild.id);
         return;
     }
