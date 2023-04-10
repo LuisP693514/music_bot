@@ -1,6 +1,6 @@
 //imports
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { prefix, token } = require('./config.json');
 const ytdl = require('ytdl-core');
 const { PermissionsBitField } = require('discord.js');
@@ -55,10 +55,32 @@ client.on('messageCreate', async message => {
     } else if (message.content === `${prefix}queue` || message.content === `${prefix}q`) {
         checkQueue(message, serverQueue)
         return;
+
+    } else if (message.content === `${prefix}help` || message.content === `${prefix}h`) {
+        listCommands(message);
+        return;
     } else {
         message.channel.send(`You need to enter a valid command. \`${prefix}help\` for a list of commands.`)
     }
 });
+
+const listCommands = async (message) => {
+    const embedMessage = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`Here is a list of helpful commands`)
+        .setTimestamp()
+        .setDescription(`
+        \`${prefix}play [youtube_url_here]\` or \`${prefix}p [youtube_url_here]\` - this will start playing a song (if nothing is playing) or queue up the song if there is something currently playing
+        
+        \`${prefix}clear\` or \`${prefix}c\` - this will clear the queue and stop all music currently playing
+        
+        \`${prefix}queue\` or \`${prefix}q\` - this will display the queue
+        
+        \`${prefix}help\` or \`${prefix}h\` - this will display the current message you see on screen
+        `)
+
+    message.channel.send({ embeds: [embedMessage] })
+}
 
 const checkQueue = async (message, serverQueue) => {
     const listOfSongs = serverQueue?.songs.map(song => song.title).join("\n") || "The queue contains no songs 😢";
@@ -85,16 +107,14 @@ const execute = async (message, serverQueue) => {
 
     if (args[1].match(youtubeRegex)) {
         let songInfo = await ytdl.getInfo(args[1]);
-        let bitRate = voiceChannel.bitrate;
-        let format;
+        const bitRate = voiceChannel.bitrate;
+        try {
+            format = ytdl.chooseFormat(songInfo.formats, { quality: "lowestaudio", filter: form => form.bitrate >= bitRate });
+        } catch (error) {
+            format = ytdl.chooseFormat(songInfo.formats, { quality: "highestaudio", filter: form => form.bitrate < bitRate });
+        }
 
-        // try {
-        //     format = ytdl.chooseFormat(songInfo.formats, { quality: "lowestaudio", filter: form => form.bitrate >= bitRate });
-        // } catch (error) {
-        //     format = ytdl.chooseFormat(songInfo.formats, { quality: "highestaudio", filter: form => form.bitrate < bitRate });
-        // }
-
-        // songInfo.formats = [format];
+        songInfo.formats = [format];
 
         const song = {
             title: songInfo.player_response.videoDetails.title,
@@ -160,19 +180,14 @@ const play = (guild, song) => {
 
     let stream;
 
-    try {
-        stream = ytdl(`https://www.youtube.com/watch?v=${song.videoId}`, {
-            filter: "audioonly"
-        });
-    } catch (error) {
-        console.log(error);
-    }
-
+    stream = ytdl(`https://www.youtube.com/watch?v=${song.videoId}`, {
+        filter: "audioonly"
+    })
     const player = createAudioPlayer();
     const resource = createAudioResource(stream, { inlineVolume: true });
     resource.volume.setVolume(serverQueue.volume / 5);
 
-    serverQueue.player = player;
+    // serverQueue.player = player;
 
     const musicPlay = async () => {
         player.play(resource)
@@ -182,11 +197,38 @@ const play = (guild, song) => {
             serverQueue.songs.shift();
             play(guild, serverQueue.songs[0])
         })
-            .on('error', error => console.log(error));
+            .on('error', error => {
+                console.log(error)
+            });
     }
 
     musicPlay();
     serverQueue.textChannel.send(`🎵 Started playing: **${song.title}** 🎵`);
+
+    // try {
+    //     const player = createAudioPlayer();
+    //     player.play(resource);
+    //     serverQueue.connection.subscribe(player);
+
+    //     new Promise((resolve, reject) => {
+    //         player.on(AudioPlayerStatus.Idle, () => {
+    //             serverQueue.songs.shift();
+    //             play(guild, serverQueue.songs[0]);
+    //             resolve();
+    //         });
+    //         player.on('error', error => {
+    //             console.error(error);
+    //             reject(error);
+    //         });
+    //     });
+
+    //     serverQueue.textChannel.send(`🎵 Started playing: **${song.title}** 🎵`);
+    // } catch (error) {
+    //     console.error(error);
+    //     serverQueue.textChannel.send(`An error occurred while playing: **${song.title}**`);
+    //     serverQueue.songs.shift();
+    //     play(guild, serverQueue.songs[0]);
+    // }
 }
 
 const skip = async (message, serverQueue) => {
@@ -214,4 +256,4 @@ const stop = async (message, serverQueue) => {
     }
 }
 
-client.login(token);
+client.login(token); 
